@@ -1,0 +1,6 @@
+.env
+/venv
+/notes
+*/__pycache__/
+agent/checkpoints/
+agent/signals_log.csv
