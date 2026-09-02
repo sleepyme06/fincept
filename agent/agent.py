@@ -1,13 +1,14 @@
 import os
 from pathlib import Path
 from time import sleep
+from utils import call_llm_with_retry
 from dotenv import load_dotenv
-from groq import Groq
+from groq import Groq,RateLimitError, BadRequestError
 from tools import TOOLS,TOOL_SCHEMAS,list_files,FAKE_FS
 import json
 import copy
 from checkpoint import save_checkpt,load_checkpt
-from signals import get_action_key, repetition_score,drift_score,update_failure_streak, confidence_score,log_signals
+from signals import get_action_key, repetition_score,drift_score,update_failure_streak, confidence_score,log_signals,should_rewind
 
 load_dotenv()
  
@@ -82,7 +83,7 @@ def run_agent(message,action_history):
     global n,failure_streak
     while True:
 
-        response= client.chat.completions.create(messages=message,model=model,tools=TOOL_SCHEMAS,tool_choice="auto",)
+        response= call_llm_with_retry(client=client,messages=message,model=model,tools=TOOL_SCHEMAS,tool_choice="auto",)
         ans=response.choices[0].message
         message.append(
             {
@@ -104,7 +105,7 @@ def run_agent(message,action_history):
             score = repetition_score(action_history)
             print(f"[signal] repetition_score = {score:.2f}")
 
-            expected_resp = client.chat.completions.create(
+            expected_resp = call_llm_with_retry(
             model=model,
             messages=[{
                 "role": "user",
@@ -112,6 +113,7 @@ def run_agent(message,action_history):
                         f"In 1-2 short sentences, describe what the resulting "
                         f"observation/output should look like."
             }],
+            client=client,
             )
             expected_text = expected_resp.choices[0].message.content
 
@@ -134,6 +136,11 @@ def run_agent(message,action_history):
             })
             n+=1
             log_signals(n, score, d_score, failure_streak, c_score)
+            rewind_flag = should_rewind(score, d_score, failure_streak, c_score)
+            print(f"[signal] should_rewind = {rewind_flag}")
+
+            if rewind_flag:
+                print(">>> REWIND TRIGGERED <<<")
             state={
                 "messages":serialize_messages(message),
                 "file_sys":copy.deepcopy(FAKE_FS),

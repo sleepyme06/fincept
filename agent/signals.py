@@ -1,3 +1,6 @@
+from utils import call_llm_with_retry
+import re
+
 def get_action_key(name, args):
     # tool name + args ko ek comparable, hashable string mein convert karo
     return f"{name}:{sorted(args.items())}"
@@ -53,9 +56,8 @@ def update_failure_streak(current_streak, passed):
 # ---- 3d: Confidence signal ----
 
 def confidence_score(client, model, name, args, result):
-    resp = client.chat.completions.create(
-        model=model,
-        messages=[{
+    resp = call_llm_with_retry(
+       messages=[{
             "role": "user",
             "content": (
                 f"An agent ran: {name}({args}) and got this result:\n{result}\n\n"
@@ -63,13 +65,21 @@ def confidence_score(client, model, name, args, result):
                 f"this step was correct and moved the task forward? "
                 f"Reply with ONLY a single number, nothing else."
             )
-        }],
+        }],model=model,
+        client=client,
     )
     text = resp.choices[0].message.content.strip()
-    try:
-        return int(text.split()[0]) / 10   # normalize to 0-1
-    except (ValueError, IndexError):
-        return 0.5   # fallback agar LLM ne number nahi diya
+ # <think>...</think> reasoning block hata do agar hai
+    text = re.sub(r"<think>.*?</think>", "", text, flags=re.DOTALL).strip()
+
+    # ab jo bhi bacha hai usme se pehla number dhoondo
+    match = re.search(r"\d+", text)
+    if match:
+        score = int(match.group())
+        return min(score, 10) / 10   # safety: 10 se zyada na ho
+
+    print(f"[debug] could not parse confidence from: {repr(text)}")
+    return 0.5
 
 import csv
 import os
@@ -83,3 +93,14 @@ def log_signals(step, rep_score, d_score, failure_streak, c_score):
         if not file_exists:
             writer.writerow(["step", "repetition", "drift", "failure_streak", "confidence"])
         writer.writerow([step, rep_score, d_score, failure_streak, c_score])
+
+def should_rewind(rep_score, drift_score, failure_streak, confidence_score):
+    if rep_score >= 0.66:
+        return True
+    if failure_streak >= 3:
+        return True
+    # drift akela trigger nahi karega — sirf tab count hoga
+    # jab repetition ya confidence bhi already elevated ho
+    if drift_score >= 0.7 and (rep_score >= 0.33 or confidence_score <= 0.3):
+        return True
+    return False
