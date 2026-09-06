@@ -121,7 +121,7 @@ def run_agent(message,action_history):
             d_score = drift_score(expected_text, result)
             print(f"[signal] drift_score = {d_score:.2f}")
 
-            passed = "ERROR" not in result
+            passed = "error" not in result.lower()
             failure_streak = update_failure_streak(failure_streak, passed)
             print(f"[signal] failure_streak = {failure_streak}")
 
@@ -139,8 +139,6 @@ def run_agent(message,action_history):
             rewind_flag = should_rewind(score, d_score, failure_streak, c_score)
             print(f"[signal] should_rewind = {rewind_flag}")
 
-            if rewind_flag:
-                print(">>> REWIND TRIGGERED <<<")
             state={
                 "messages":serialize_messages(message),
                 "file_sys":copy.deepcopy(FAKE_FS),
@@ -149,6 +147,34 @@ def run_agent(message,action_history):
                 "failure_streak": failure_streak, 
             }
             save_checkpt(state,n)
+            if rewind_flag:
+                print(">>> REWIND TRIGGERED <<<")
+                rewind_step = max(n - 1, 0)
+                restored = load_checkpt(rewind_step)
+
+                if isinstance(restored, str) and restored.startswith("ERROR"):
+                    print(f"[rewind] could not load checkpoint {rewind_step}: {restored}")
+                else:
+                    FAKE_FS.clear()
+                    FAKE_FS.update(restored["file_sys"])
+
+                    message.clear()
+                    message.extend(restored["messages"])
+                    message.append({
+                        "role": "user",
+                        "content": (
+                            f"Your previous approach (attempting {name}({args})) "
+                            f"was not working — it triggered a rewind due to repeated "
+                            f"failures or drift. Try a different approach instead."
+                        )
+                    })
+
+                    action_history[:] = restored["action_history"]
+                    failure_streak = restored["failure_streak"]
+                    n = restored["step"]
+
+                    print(f"[rewind] restored to step {rewind_step}")
+                    break  # stop processing remaining tool_calls this turn, go back to while Tru            
 
 
 

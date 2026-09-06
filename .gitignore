@@ -4,3 +4,5 @@
 */__pycache__/
 agent/checkpoints/
 agent/signals_log.csv
+agent/cp/
+agent/cp2/
