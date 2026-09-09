@@ -1,4 +1,4 @@
-from utils import call_llm_with_retry
+from .utils import call_llm_with_retry
 import re
 
 def get_action_key(name, args):
@@ -18,31 +18,23 @@ def repetition_score(action_history, window=4):
 
     return repeats / (len(recent) - 1)
 
-from sentence_transformers import SentenceTransformer
-import numpy as np
+import re
 
-# model ek hi baar load hota hai, top-level pe
-embed_model = SentenceTransformer("all-MiniLM-L6-v2")
+def drift_score(name, args, result):
+    if name == "write_file":
+        expected_len = len(args.get("content", ""))
+        match = re.search(r"\((\d+) characters\)", result)
+        if not match:
+            # result doesn't match expected format at all -- treat as max drift
+            return 1.0
+        actual_len = int(match.group(1))
+        if expected_len == 0:
+            return 0.0 if actual_len == 0 else 1.0
+        diff_ratio = abs(expected_len - actual_len) / expected_len
+        return min(diff_ratio, 1.0)
 
-
-def get_embedding(text):
-    return embed_model.encode(text)
-
-
-def cosine_similarity(vec1, vec2):
-    dot = np.dot(vec1, vec2)
-    norm1 = np.linalg.norm(vec1)
-    norm2 = np.linalg.norm(vec2)
-    if norm1 == 0 or norm2 == 0:
-        return 0.0
-    return dot / (norm1 * norm2)
-
-
-def drift_score(expected_text, actual_text):
-    exp_vec = get_embedding(expected_text)
-    act_vec = get_embedding(actual_text)
-    similarity = cosine_similarity(exp_vec, act_vec)
-    return 1 - similarity   # high similarity = low drift
+    # no ground truth available for other tools so nothing to check
+    return 0.0
 
 # ---- 3c: Verifier failure streak ----
 
@@ -55,31 +47,10 @@ def update_failure_streak(current_streak, passed):
 
 # ---- 3d: Confidence signal ----
 
-def confidence_score(client, model, name, args, result):
-    resp = call_llm_with_retry(
-       messages=[{
-            "role": "user",
-            "content": (
-                f"An agent ran: {name}({args}) and got this result:\n{result}\n\n"
-                f"On a scale of 1-10, how confident should the agent be that "
-                f"this step was correct and moved the task forward? "
-                f"Reply with ONLY a single number, nothing else."
-            )
-        }],model=model,
-        client=client,
-    )
-    text = resp.choices[0].message.content.strip()
- # <think>...</think> reasoning block hata do agar hai
-    text = re.sub(r"<think>.*?</think>", "", text, flags=re.DOTALL).strip()
-
-    # ab jo bhi bacha hai usme se pehla number dhoondo
-    match = re.search(r"\d+", text)
-    if match:
-        score = int(match.group())
-        return min(score, 10) / 10   # safety: 10 se zyada na ho
-
-    print(f"[debug] could not parse confidence from: {repr(text)}")
-    return 0.5
+def confidence_score(failure_streak, repetition_score):
+    score = 1.0 - (failure_streak * 0.3) - (repetition_score* 0.1)
+    score = max(0.0, min(1.0, score))
+    return score
 
 import csv
 import os

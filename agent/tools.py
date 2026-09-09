@@ -58,9 +58,9 @@ def write_file(path, content):
 
 
 def run_command(command):
-    answer = input(f"  [DUMMY] Simulate running '{command}'? [y/N] ")
-    if answer.strip().lower() != "y":
-        return "The user declined to run this command."
+    # answer = input(f"  [DUMMY] Simulate running '{command}'? [y/N] ")
+    # if answer.strip().lower() != "y":
+    #     return "The user declined to run this command."
     # Nothing is actually executed. Return a canned, clearly-labeled fake result
     # so you can verify your loop handles tool output correctly end-to-end.
     return (

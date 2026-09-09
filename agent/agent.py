@@ -1,14 +1,14 @@
 import os
 from pathlib import Path
 from time import sleep
-from utils import call_llm_with_retry
+from .utils import call_llm_with_retry
 from dotenv import load_dotenv
 from groq import Groq,RateLimitError, BadRequestError
-from tools import TOOLS,TOOL_SCHEMAS,list_files,FAKE_FS
+from .tools import TOOLS,TOOL_SCHEMAS,list_files,FAKE_FS
 import json
 import copy
-from checkpoint import save_checkpt,load_checkpt
-from signals import get_action_key, repetition_score,drift_score,update_failure_streak, confidence_score,log_signals,should_rewind
+from .checkpoint import save_checkpt,load_checkpt
+from .signals import get_action_key, repetition_score,drift_score,update_failure_streak, confidence_score,log_signals,should_rewind
 
 load_dotenv()
  
@@ -19,7 +19,7 @@ if not apikey:
 client=Groq(api_key=apikey)
 model="qwen/qwen3.6-27b"
 
-SYSTEM_PROMPT=""""
+SYSTEM_PROMPT="""
 You are a coding agent running in the user's terminal.
 
 You have four tools available:
@@ -30,10 +30,7 @@ You have four tools available:
 
 Use them when needed.
 """
-n=0
-failure_streak = 0   
-
-
+ 
 def run_tools(name,args):
     # grab actual name of tool and parse it from sting to actual fxn
     # name=tool_call.function.name
@@ -72,15 +69,14 @@ def serialize_messages(message):
                         },
                     })
             item["tool_calls"] = normalized
-            if not tool_calls:
-                item.pop("tool_calls", None)
         safe.append(item)
 
     return safe
 
 # one run one effective user prompt
 def run_agent(message,action_history):
-    global n,failure_streak
+    step_count=0
+    failure_streak = 0  
     while True:
 
         response= call_llm_with_retry(client=client,messages=message,model=model,tools=TOOL_SCHEMAS,tool_choice="auto",)
@@ -118,7 +114,7 @@ def run_agent(message,action_history):
             expected_text = expected_resp.choices[0].message.content
 
             result=run_tools(name,args)
-            d_score = drift_score(expected_text, result)
+            d_score = drift_score(name,args,result)
             print(f"[signal] drift_score = {d_score:.2f}")
 
             passed = "error" not in result.lower()
@@ -126,7 +122,7 @@ def run_agent(message,action_history):
             print(f"[signal] failure_streak = {failure_streak}")
 
             # 3d
-            c_score = confidence_score(client, model, name, args, result)
+            c_score = confidence_score(failure_streak,repetition_score)
             print(f"[signal] confidence_score = {c_score:.2f}")
 
             message.append({
@@ -134,22 +130,22 @@ def run_agent(message,action_history):
                 "tool_call_id": tool_call.id,
                 "content": result,
             })
-            n+=1
-            log_signals(n, score, d_score, failure_streak, c_score)
+            step_count+=1
+            log_signals(step_count, score, d_score, failure_streak, c_score)
             rewind_flag = should_rewind(score, d_score, failure_streak, c_score)
             print(f"[signal] should_rewind = {rewind_flag}")
 
             state={
                 "messages":serialize_messages(message),
                 "file_sys":copy.deepcopy(FAKE_FS),
-                "step":n,
+                "step":step_count,
                 "action_history": action_history,
                 "failure_streak": failure_streak, 
             }
-            save_checkpt(state,n)
+            save_checkpt(state,step_count)
             if rewind_flag:
                 print(">>> REWIND TRIGGERED <<<")
-                rewind_step = max(n - 1, 0)
+                rewind_step = max(step_count - 1, 0)
                 restored = load_checkpt(rewind_step)
 
                 if isinstance(restored, str) and restored.startswith("ERROR"):
@@ -171,7 +167,7 @@ def run_agent(message,action_history):
 
                     action_history[:] = restored["action_history"]
                     failure_streak = restored["failure_streak"]
-                    n = restored["step"]
+                    step_count = restored["step"]
 
                     print(f"[rewind] restored to step {rewind_step}")
                     break  # stop processing remaining tool_calls this turn, go back to while Tru            
@@ -185,7 +181,7 @@ if __name__== "__main__":
     print("Mini agent ready. Type 'exit' to quit.")
     while True:
         user=input("you:")
-        if user.strip().lower()in ('exit','quite'):
+        if user.strip().lower()in ('exit','quit'):
             break
         message.append({"role": "user", "content": user})
         reply = run_agent(message,action_history)
