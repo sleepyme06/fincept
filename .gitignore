@@ -6,3 +6,6 @@ agent/checkpoints/
 agent/signals_log.csv
 agent/cp/
 agent/cp2/
+.pytest_cache
+__pycache__/
+*.py[cod]
