@@ -1,4 +1,4 @@
-# Fincept Agent
+# Agent
 
 A small ReAct-style coding agent that uses Groq tool calls, a fake filesystem,
 action history, checkpoints, and a cheap-signal rewind mechanism. It is a
@@ -80,7 +80,7 @@ rewind/continue decision using fixed thresholds — repetition ≥ 0.66,
 failure_streak ≥ 3, or elevated drift combined with elevated repetition or
 low confidence.
 
-When rewind triggers, the agent loads the checkpoint from one step earlier,
+When rewind triggers, the agent loads the checkpoint from last good step if not then one step earlier,
 restores the fake filesystem and message history in place, and appends a
 message telling the model its previous approach failed and to try
 something different. Rewinds are capped at `MAX_REWINDS` per task to avoid
