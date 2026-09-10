@@ -10,3 +10,4 @@ agent/cp2/
 __pycache__/
 *.py[cod]
 checkpoints/
+signals_log.csv
