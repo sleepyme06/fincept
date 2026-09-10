@@ -75,7 +75,7 @@ def serialize_messages(message):
 
 MAX_REWINDS = 3
 # one run one effective user prompt
-def run_agent(message,action_history, starting_step=0, starting_failure_streak=0):
+def run_agent(message,action_history,pass_his, starting_step=0, starting_failure_streak=0):
     step_count=starting_step
     failure_streak = starting_failure_streak
     rewind_count = 0
@@ -110,6 +110,7 @@ def run_agent(message,action_history, starting_step=0, starting_failure_streak=0
             print(f"[signal] drift_score = {d_score:.2f}")
 
             passed = "error" not in result.lower()
+            pass_his.append(passed)
             failure_streak = update_failure_streak(failure_streak, passed)
             print(f"[signal] failure_streak = {failure_streak}")
 
@@ -133,14 +134,25 @@ def run_agent(message,action_history, starting_step=0, starting_failure_streak=0
                 "step":step_count,
                 "action_history": action_history,
                 "failure_streak": failure_streak, 
+                "pass_his": pass_his,  
             }
             save_checkpt(state,step_count)
+
+            rewind_step = None
+            for i in range(len(pass_his) - 1, -1, -1):
+                if pass_his[i]:
+                    # i+1 is for actual step number
+                    rewind_step = i + 1
+                    break
+            if rewind_step is None:
+                rewind_step = max(step_count - 1, 0)
+
             if rewind_flag:
                 if rewind_count >= MAX_REWINDS:
                     print(f"[rewind] limit reached ({MAX_REWINDS}), not rewinding again this task")
                     continue
 
-                rewind_step = step_count - 1
+                # rewind_step = step_count - 1
                 if rewind_step < 1:
                     print("[rewind] no earlier checkpoint exists, cannot rewind")
                     continue
@@ -171,6 +183,7 @@ def run_agent(message,action_history, starting_step=0, starting_failure_streak=0
 
                 action_history[:] = restored["action_history"]
                 failure_streak = restored["failure_streak"]
+                pass_his[:] = restored["pass_his"] 
                 step_count = restored["step"]
                 rewind_count += 1
 

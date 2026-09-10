@@ -14,8 +14,9 @@ if __name__ == "__main__":
 
     message = [{"role": "system", "content": SYSTEM_PROMPT}]
     action_history = []
+    pass_his=[]
     message.append({"role": "user", "content": DEMO_PROMPT})
 
-    reply = run_agent(message, action_history)
+    reply = run_agent(message, action_history,pass_his)
 
     print(f"\nFinal agent reply:\n{reply}\n")
