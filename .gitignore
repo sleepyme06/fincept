@@ -9,3 +9,4 @@ agent/cp2/
 .pytest_cache
 __pycache__/
 *.py[cod]
+checkpoints/

@@ -73,13 +73,15 @@ def serialize_messages(message):
 
     return safe
 
+MAX_REWINDS = 3
 # one run one effective user prompt
-def run_agent(message,action_history):
-    step_count=0
-    failure_streak = 0  
+def run_agent(message,action_history, starting_step=0, starting_failure_streak=0):
+    step_count=starting_step
+    failure_streak = starting_failure_streak
+    rewind_count = 0
     while True:
 
-        response= call_llm_with_retry(client=client,messages=message,model=model,tools=TOOL_SCHEMAS,tool_choice="auto",)
+        response=call_llm_with_retry(client=client,messages=message,model=model,tools=TOOL_SCHEMAS,tool_choice="auto",)
         ans=response.choices[0].message
         message.append(
             {
@@ -93,6 +95,8 @@ def run_agent(message,action_history):
         if not ans.tool_calls:
             return ans.content
         
+        rewound_this_turn = False
+
         for tool_call in ans.tool_calls:
             name = tool_call.function.name
             args = json.loads(tool_call.function.arguments)
@@ -100,18 +104,6 @@ def run_agent(message,action_history):
             action_history.append(get_action_key(name, args))
             score = repetition_score(action_history)
             print(f"[signal] repetition_score = {score:.2f}")
-
-            expected_resp = call_llm_with_retry(
-            model=model,
-            messages=[{
-                "role": "user",
-                "content": f"An agent is about to run: {name}({args}). "
-                        f"In 1-2 short sentences, describe what the resulting "
-                        f"observation/output should look like."
-            }],
-            client=client,
-            )
-            expected_text = expected_resp.choices[0].message.content
 
             result=run_tools(name,args)
             d_score = drift_score(name,args,result)
@@ -122,7 +114,7 @@ def run_agent(message,action_history):
             print(f"[signal] failure_streak = {failure_streak}")
 
             # 3d
-            c_score = confidence_score(failure_streak,repetition_score)
+            c_score = confidence_score(failure_streak,score)
             print(f"[signal] confidence_score = {c_score:.2f}")
 
             message.append({
@@ -144,45 +136,61 @@ def run_agent(message,action_history):
             }
             save_checkpt(state,step_count)
             if rewind_flag:
-                print(">>> REWIND TRIGGERED <<<")
-                rewind_step = max(step_count - 1, 0)
-                restored = load_checkpt(rewind_step)
+                if rewind_count >= MAX_REWINDS:
+                    print(f"[rewind] limit reached ({MAX_REWINDS}), not rewinding again this task")
+                    continue
 
+                rewind_step = step_count - 1
+                if rewind_step < 1:
+                    print("[rewind] no earlier checkpoint exists, cannot rewind")
+                    continue
+
+                restored = load_checkpt(rewind_step)
                 if isinstance(restored, str) and restored.startswith("ERROR"):
                     print(f"[rewind] could not load checkpoint {rewind_step}: {restored}")
-                else:
-                    FAKE_FS.clear()
-                    FAKE_FS.update(restored["file_sys"])
+                    continue
 
-                    message.clear()
-                    message.extend(restored["messages"])
-                    message.append({
-                        "role": "user",
-                        "content": (
-                            f"Your previous approach (attempting {name}({args})) "
-                            f"was not working — it triggered a rewind due to repeated "
-                            f"failures or drift. Try a different approach instead."
-                        )
-                    })
+                reason = (
+                    f"repetition={score:.2f}, drift={d_score:.2f}, "
+                    f"failure_streak={failure_streak}, confidence={c_score:.2f}"
+                )
+                print(f"[rewind] triggered at step {step_count} -> restoring step {rewind_step}. Reason: {reason}")
 
-                    action_history[:] = restored["action_history"]
-                    failure_streak = restored["failure_streak"]
-                    step_count = restored["step"]
+                FAKE_FS.clear()
+                FAKE_FS.update(restored["file_sys"])
 
-                    print(f"[rewind] restored to step {rewind_step}")
-                    break  # stop processing remaining tool_calls this turn, go back to while Tru            
+                message.clear()
+                message.extend(restored["messages"])
+                message.append({
+                    "role": "user",
+                    "content": (
+                        f"Your previous approach (attempting {name}({args})) triggered a "
+                        f"rewind due to: {reason}. Try a different approach instead."
+                    )
+                })
+
+                action_history[:] = restored["action_history"]
+                failure_streak = restored["failure_streak"]
+                step_count = restored["step"]
+                rewind_count += 1
+
+                rewound_this_turn = True
+                break
+
+        if rewound_this_turn:
+            continue          
 
 
 
 
-if __name__== "__main__":
-    message = [{"role": "system", "content": SYSTEM_PROMPT}]
-    action_history=[]
-    print("Mini agent ready. Type 'exit' to quit.")
-    while True:
-        user=input("you:")
-        if user.strip().lower()in ('exit','quit'):
-            break
-        message.append({"role": "user", "content": user})
-        reply = run_agent(message,action_history)
-        print(f"\nAgent: {reply}")
+# if __name__== "__main__":
+#     message = [{"role": "system", "content": SYSTEM_PROMPT}]
+#     action_history=[]
+#     print("Mini agent ready. Type 'exit' to quit.")
+#     while True:
+#         user=input("you:")
+#         if user.strip().lower()in ('exit','quit'):
+#             break
+#         message.append({"role": "user", "content": user})
+#         reply = run_agent(message,action_history)
+#         print(f"\nAgent: {reply}")
