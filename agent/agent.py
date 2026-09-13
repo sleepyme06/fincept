@@ -9,6 +9,7 @@ import json
 import copy
 from .checkpoint import save_checkpt,load_checkpt
 from .signals import get_action_key, repetition_score,drift_score,update_failure_streak, confidence_score,log_signals,should_rewind
+from .memory import add_reflection, get_reflections
 
 load_dotenv()
  
@@ -167,17 +168,22 @@ def run_agent(message,action_history,pass_his, starting_step=0, starting_failure
                     f"failure_streak={failure_streak}, confidence={c_score:.2f}"
                 )
                 print(f"[rewind] triggered at step {step_count} -> restoring step {rewind_step}. Reason: {reason}")
+                add_reflection(name, args, reason)
 
                 FAKE_FS.clear()
                 FAKE_FS.update(restored["file_sys"])
 
                 message.clear()
                 message.extend(restored["messages"])
+                past = get_reflections(limit=5,tool_name=name)
+                past_text = "\n".join(f"- {p['action_key']} failed before: {p['reason']}" for p in past)
+
                 message.append({
                     "role": "user",
                     "content": (
                         f"Your previous approach (attempting {name}({args})) triggered a "
-                        f"rewind due to: {reason}. Try a different approach instead."
+                        f"rewind due to: {reason}. Try a different approach instead.\n\n"
+                        f"Past failures to avoid repeating:\n{past_text}"
                     )
                 })
 

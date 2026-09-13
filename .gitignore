@@ -11,3 +11,4 @@ __pycache__/
 *.py[cod]
 checkpoints/
 signals_log.csv
+memory.json
