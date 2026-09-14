@@ -44,10 +44,15 @@ def list_files(path="."):
     return "\n".join(sorted(entries)) or "(empty directory)"
 
 
+import difflib
+
 def read_file(path):
     path = _norm(path)
     if path not in FAKE_FS or FAKE_FS[path] is None:
-        return f"(fake) Error: no such file '{path}'"
+        candidates = [p for p in FAKE_FS if FAKE_FS[p] is not None]
+        close = difflib.get_close_matches(path, candidates, n=1, cutoff=0.4)
+        suggestion = f" Did you mean '{close[0]}'?" if close else ""
+        return f"(fake) Error: no such file '{path}'.{suggestion}"
     return FAKE_FS[path]
 
 

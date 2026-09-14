@@ -9,7 +9,7 @@ import json
 import copy
 from .checkpoint import save_checkpt,load_checkpt
 from .signals import get_action_key, repetition_score,drift_score,update_failure_streak, confidence_score,log_signals,should_rewind
-from .memory import add_reflection, get_reflections
+from .memory import add_reflection, get_reflections,extract_suggestion
 
 load_dotenv()
  
@@ -168,7 +168,7 @@ def run_agent(message,action_history,pass_his, starting_step=0, starting_failure
                     f"failure_streak={failure_streak}, confidence={c_score:.2f}"
                 )
                 print(f"[rewind] triggered at step {step_count} -> restoring step {rewind_step}. Reason: {reason}")
-                add_reflection(name, args, reason)
+                add_reflection(name, args, reason,result)
 
                 FAKE_FS.clear()
                 FAKE_FS.update(restored["file_sys"])
@@ -176,7 +176,12 @@ def run_agent(message,action_history,pass_his, starting_step=0, starting_failure
                 message.clear()
                 message.extend(restored["messages"])
                 past = get_reflections(limit=5,tool_name=name)
+                # here's what failed before
                 past_text = "\n".join(f"- {p['action_key']} failed before: {p['reason']}" for p in past)
+                # link t1,t2
+                suggestion= extract_suggestion(result)
+                if suggestion:
+                    past_text+=f"\nLive tool hint: {suggestion}"
 
                 message.append({
                     "role": "user",
