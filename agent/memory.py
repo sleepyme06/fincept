@@ -1,6 +1,7 @@
 import json
 import os
 import re
+from .utils import DID_YOU_MEAN
 
 MEMORY_PATH = "memory.json"
 
@@ -16,7 +17,7 @@ def _save(entries):
 
 MAX_ENTRIES = 20
 
-def add_reflection(tool_name, args, reason,result):
+def add_reflection(tool_name, args, reason,result=""):
     entries = _load()
     action_key = f"{tool_name}:{sorted(args.items())}"
 
@@ -24,7 +25,7 @@ def add_reflection(tool_name, args, reason,result):
     entries.append({
         "action_key": action_key,
         "reason": reason,
-        "result":result,
+        "result":result[:200],
     })
 
     if len(entries) > MAX_ENTRIES:
@@ -33,7 +34,7 @@ def add_reflection(tool_name, args, reason,result):
     _save(entries)
 
 def extract_suggestion(result):
-    match = re.search("mean '([^']+)'", result)
+    match = re.search(rf"no such file.*{DID_YOU_MEAN} '([^']+)'", result)
     return match.group(1) if match else None
 
 # could instead filter to reflections matching the current action/tool being attempted

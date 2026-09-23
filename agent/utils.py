@@ -20,3 +20,5 @@ def call_llm_with_retry(client, model, messages, tools=None, tool_choice=None, r
             print(f"[retry {attempt+1}/{retries}] generation glitch: {e}")
             time.sleep(1)
     raise RuntimeError("LLM kept failing after retries")
+
+DID_YOU_MEAN = "Did you mean"

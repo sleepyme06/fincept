@@ -81,3 +81,24 @@ def test_curation_caps_size():
     assert reflections[-1]["action_key"] == "read_file:[('path', 'file24.txt')]"
 
     _cleanup()
+
+# add to tests/memory_test.py (or tools_test.py, either works — pick where extract_suggestion is imported from)
+from agent.memory import extract_suggestion
+
+
+def test_extract_suggestion_matches_real_error():
+    result = "(fake) Error: no such file './setings.txt'. Did you mean './notes.txt'?"
+    suggestion = extract_suggestion(result)
+    assert suggestion == "./notes.txt"
+
+
+def test_extract_suggestion_no_match_on_unrelated_text():
+    result = "the mean 'average' was calculated for this dataset"
+    suggestion = extract_suggestion(result)
+    assert suggestion is None
+
+
+def test_extract_suggestion_no_match_when_no_suggestion():
+    result = "(fake) Error: no such file './zzzzz.txt'."
+    suggestion = extract_suggestion(result)
+    assert suggestion is None

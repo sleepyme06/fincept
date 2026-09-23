@@ -4,7 +4,7 @@ from time import sleep
 from .utils import call_llm_with_retry
 from dotenv import load_dotenv
 from groq import Groq,RateLimitError, BadRequestError
-from .tools import TOOLS,TOOL_SCHEMAS,list_files,FAKE_FS
+from .tools import TOOLS,TOOL_SCHEMAS,list_files,FAKE_FS,was_suggestion_used,record_suggestion_outcome
 import json
 import copy
 from .checkpoint import save_checkpt,load_checkpt
@@ -18,7 +18,7 @@ if not apikey:
     raise ValueError("api key bana le bhaii!!")
  
 client=Groq(api_key=apikey)
-model="qwen/qwen3.6-27b"
+model="qwen/qwen3.8-27b"
 
 SYSTEM_PROMPT="""
 You are a coding agent running in the user's terminal.
@@ -80,6 +80,7 @@ def run_agent(message,action_history,pass_his, starting_step=0, starting_failure
     step_count=starting_step
     failure_streak = starting_failure_streak
     rewind_count = 0
+    last_suggestion = None
     while True:
 
         response=call_llm_with_retry(client=client,messages=message,model=model,tools=TOOL_SCHEMAS,tool_choice="auto",)
@@ -103,6 +104,13 @@ def run_agent(message,action_history,pass_his, starting_step=0, starting_failure
             args = json.loads(tool_call.function.arguments)
 
             action_history.append(get_action_key(name, args))
+            if last_suggestion:
+                used = was_suggestion_used(last_suggestion, action_history)
+                print(f"[tool-adapt] suggestion '{last_suggestion}' used = {used}")
+                new_cutoff = record_suggestion_outcome(used)
+                print(f"[tool-adapt] cutoff now = {new_cutoff:.2f}")
+                last_suggestion = None
+
             score = repetition_score(action_history)
             print(f"[signal] repetition_score = {score:.2f}")
 
@@ -179,7 +187,11 @@ def run_agent(message,action_history,pass_his, starting_step=0, starting_failure
                 # here's what failed before
                 past_text = "\n".join(f"- {p['action_key']} failed before: {p['reason']}" for p in past)
                 # link t1,t2
-                suggestion= extract_suggestion(result)
+                #trigger suggestion when tool is read_file
+                suggestion=None # Initialize suggestion first because name may not be "read_file";otherwise suggestion is never assigned → NameError at `if suggestion:`.
+                if name =="read_file":
+                    suggestion= extract_suggestion(result)
+                    last_suggestion=suggestion
                 if suggestion:
                     past_text+=f"\nLive tool hint: {suggestion}"
 
