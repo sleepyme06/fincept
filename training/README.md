@@ -14,4 +14,22 @@ memory/tool adaptation already implemented in `agent/`.
   adapter, fine-tunes on `sft_data.jsonl`, saves the adapter.
 
 ## Current status: proof-of-concept only
-- Pipeline runs
+- Pipeline runs end-to-end (data → train → inference) without errors.
+- **Not enough data yet** — 7 examples is far too few for the model to reliably
+  learn the agent's tool-calling pattern. Test generation after training produced
+  incoherent/off-topic output (the base model's own behavior dominates).
+- Examples were flattened to plain text (`<role>: content`) rather than using a
+  proper chat/tool-calling template — faster to get working, but likely limits
+  how well the model can learn tool-call structure specifically.
+
+## What's needed to go further
+- **More data**: run many more varied agent tasks to collect dozens-hundreds of
+  examples, not single digits.
+- **Proper chat template**: use the base model's actual tool-calling format
+  (or a structured chat template) instead of flattened text, so the model learns
+  correct tool-call syntax.
+- **Evaluation**: some way to measure if the fine-tuned model is actually better
+  than the base model at this task, not just "it runs."
+- **Hosting**: to actually replace Groq in `agent/agent.py`, the fine-tuned model
+  needs to be served somewhere the agent can call it (e.g. via a local/hosted
+  inference endpoint) — not yet done.
