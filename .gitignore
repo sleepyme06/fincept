@@ -12,3 +12,5 @@ __pycache__/
 checkpoints/
 signals_log.csv
 memory.json
+suggestion_stats.json
+training/sft_output/

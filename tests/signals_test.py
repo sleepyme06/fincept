@@ -1,4 +1,4 @@
-from agent.signals import get_action_key, repetition_score, confidence_score,drift_score
+from agent.signals import get_action_key, repetition_score, confidence_score,drift_score, grounding_score
 
 # def test_placeholder():
 #     assert True
@@ -72,3 +72,27 @@ def test_drift():
     assert drift_score("read_file", {"path": "notes.txt"}, "some content") == 0.0
     assert drift_score("list_files", {"path": "."}, "a\nb\nc") == 0.0
     assert drift_score("run_command", {"command": "ls"}, "fake output") == 0.0
+
+
+def test_grounding_high_when_answer_uses_tool_words():
+    answer = "the file contains dummy testing data"
+    tool_outputs = ["This is a dummy file for testing."]
+    score = grounding_score(answer, tool_outputs)
+    assert score > 0.3
+
+
+def test_grounding_low_when_answer_unrelated():
+    answer = "the file contains sales figures and revenue numbers"
+    tool_outputs = ["This is a dummy file for testing."]
+    score = grounding_score(answer, tool_outputs)
+    assert score < 0.3
+
+
+def test_grounding_zero_with_no_tool_outputs():
+    score = grounding_score("some answer", [])
+    assert score == 0.0
+
+
+def test_grounding_zero_with_empty_answer():
+    score = grounding_score("", ["some tool output"])
+    assert score == 0.0

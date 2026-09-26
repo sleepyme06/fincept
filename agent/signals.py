@@ -75,3 +75,9 @@ def should_rewind(rep_score, drift_score, failure_streak, confidence_score):
     if drift_score >= 0.7 and (rep_score >= 0.33 or confidence_score <= 0.3):
         return True
     return False
+
+def grounding_score(answer_text, tool_outputs):
+    answer_words = set((answer_text or "").lower().split())
+    tool_words = set(" ".join(tool_outputs).lower().split())
+    overlap = answer_words & tool_words
+    return len(overlap) / len(answer_words) if answer_words else 0.0

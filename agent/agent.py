@@ -8,7 +8,7 @@ from .tools import TOOLS,TOOL_SCHEMAS,list_files,FAKE_FS,was_suggestion_used,rec
 import json
 import copy
 from .checkpoint import save_checkpt,load_checkpt
-from .signals import get_action_key, repetition_score,drift_score,update_failure_streak, confidence_score,log_signals,should_rewind
+from .signals import get_action_key, repetition_score,drift_score,update_failure_streak, confidence_score,log_signals,should_rewind,grounding_score
 from .memory import add_reflection, get_reflections,extract_suggestion
 
 load_dotenv()
@@ -95,6 +95,46 @@ def run_agent(message,action_history,pass_his, starting_step=0, starting_failure
 
         # if no tool call just return the message
         if not ans.tool_calls:
+            tool_outputs = [d.get("content") for d in message if d.get("role") == "tool"]
+            answer_words = set((ans.content or "").lower().split())
+
+            if len(answer_words) < 5:
+                print("[signal] answer too short to check grounding, skipping")
+                return ans.content
+
+            grounding = grounding_score(ans.content, tool_outputs)
+            print(f"[signal] grounding_score = {grounding:.2f}")
+
+            GROUNDING_THRESHOLD = 0.15
+
+            if grounding< GROUNDING_THRESHOLD and tool_outputs:
+                print(f"[signal] low grounding detected — retrying final answer once")
+
+                message.append({
+                    "role": "user",
+                    "content": (
+                        "Your answer doesn't seem grounded in the actual tool results. "
+                        "Re-check the tool outputs above and give a corrected, accurate answer."
+                    )
+                })
+
+                retry_response = call_llm_with_retry(
+                    client=client, messages=message, model=model,
+                    tools=TOOL_SCHEMAS, tool_choice="auto",
+                )
+                retry_ans = retry_response.choices[0].message
+                message.append({
+                    "role": "assistant",
+                    "content": retry_ans.content,
+                    **({"tool_calls": retry_ans.tool_calls} if retry_ans.tool_calls else {}),
+                })
+
+                if not retry_ans.tool_calls:
+                    return retry_ans.content
+                else:
+                    ans = retry_ans
+                    continue
+
             return ans.content
         
         rewound_this_turn = False
